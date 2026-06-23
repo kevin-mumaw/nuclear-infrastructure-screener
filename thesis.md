@@ -3,11 +3,11 @@
 
 ## 1. Strategy Philosophy
 
-Same framework as the hypersonic build: avoid the headline name everyone already owns, and avoid pure speculative bets on which specific technology wins. Instead, target the layer of suppliers, fuel providers, and infrastructure builders who get paid regardless of which reactor design, which utility, or which hyperscaler deal ultimately wins. Prime/headline exposure (CEG as "the nuclear utility stock," OKLO as "the SMR stock") is tracked but deliberately underweighted unless explicitly documented as an exception — the same rule that let PLTR into the hypersonic universe.
+Same framework as my hypersonic build: avoid the headline name everyone already owns, and avoid pure speculative bets on which specific technology wins. Instead, target the layer of suppliers, fuel providers, and infrastructure builders who get paid regardless of which reactor design, which utility, or which hyperscaler deal ultimately wins. Prime/headline exposure (CEG as "the nuclear utility stock," OKLO as "the SMR stock") is tracked but deliberately underweighted unless explicitly documented as an exception — the same rule that let PLTR into the hypersonic universe.
 
 ## 2. Why Nuclear, Why Now
 
-The catalyst structure looks more like hypersonic than quantum: multi-year government and corporate contracts (NNSA enrichment funding, Navy reactor programs, 20-year hyperscaler power purchase agreements with Microsoft/Amazon/Google) rather than press-release-driven sentiment pops. Uranium supply has lagged a decade of underinvestment while AI data-center power demand has pulled forward utility interest in restarting and extending nuclear capacity. This is a capacity-and-fuel-cycle story, not a narrative story — closer to your risk comfort zone than quantum's IPO-wave volatility.
+The catalyst structure looks more like hypersonic than quantum: multi-year government and corporate contracts (NNSA enrichment funding, Navy reactor programs, 20-year hyperscaler power purchase agreements with Microsoft/Amazon/Google) rather than press-release-driven sentiment pops. Uranium supply has lagged a decade of underinvestment while AI data-center power demand has pulled forward utility interest in restarting and extending nuclear capacity. This is a capacity-and-fuel-cycle story, not a narrative story — closer to my risk comfort zone than quantum's IPO-wave volatility.
 
 ## 3. Exclusion Criteria
 
