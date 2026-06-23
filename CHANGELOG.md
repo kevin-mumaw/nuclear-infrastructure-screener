@@ -1,6 +1,10 @@
 # Changelog — Second Layer Capital Nuclear Screener
 
 All notable changes, algorithmic updates, and fundamental override calibrations for the systematic Nuclear Infrastructure "Picks & Shovels" strategy will be documented in this file.
+## - 2026-06-22 (Technical Integration Update)
+### Added
+- Implemented `fetch_technical_signals` function inside `data/fetch_fundamentals.py` to calculate a 14-day RSI and 50-day SMA trend status.
+- Upgraded `allocator.py` with an execution logic gate framework to output actionable statuses (`EXECUTE BUY`, `HOLD (Overbought)`, `WAIT (No Trend)`).
 
 ## - 2026-06-22
 ### Added

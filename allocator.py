@@ -1,56 +1,60 @@
 import json
 import os
-import yfinance as yf
 from scoring.nqs_scorer import run_full_universe
+from data.fetch_fundamentals import fetch_technical_signals
 
 def generate_order_sheet(total_capital=10000):
-    # 1. Fetch our fresh quality scores
     print("Gathering live calculations from NQS Engine...")
     scores = run_full_universe()
     
-    # 2. Get current stock prices via yfinance
-    tickers = [item['ticker'] for item in scores]
-    print(f"Fetching live market pricing for {len(tickers)} assets...")
-    
-    prices = {}
-    for ticker in tickers:
-        try:
-            asset = yf.Ticker(ticker)
-            prices[ticker] = asset.history(period="1d")['Close'].iloc[-1]
-        except Exception:
-            prices[ticker] = 0.0
-
-    # 3. Filter out low scores (Minimum quality floor of 50 NQS)
     valid_scores = [item for item in scores if item['nqs'] is not None and item['nqs'] >= 50.0]
     
     if not valid_scores:
         print("No companies passed the minimum quality score threshold.")
         return
 
-    # 4. Calculate weights based on NQS performance
     total_nqs = sum(item['nqs'] for item in valid_scores)
     
-    print(f"\n==============================================================")
-    print(f"         SECOND LAYER CAPITAL — NUCLEAR ALLOCATION SHEET       ")
-    print(f"         TOTAL CASH BUDGET: ${total_capital:,}                  ")
-    print(f"==============================================================")
-    print(f"{'TICKER':<8}{'DOMAIN':<18}{'NQS':<8}{'TARGET %':<12}{'DOLLAR':<12}{'SHARES'}")
-    print("-" * 62)
+    print(f"\n=============================================================================")
+    print(f"         SECOND LAYER CAPITAL — NUCLEAR ALLOCATION & TECHNICAL FILTER        ")
+    print(f"         TOTAL CASH BUDGET: ${total_capital:,}                                 ")
+    print(f"=============================================================================")
+    print(f"{'TICKER':<8}{'NQS':<6}{'TARGET %':<10}{'DOLLAR':<10}{'PRICE':<9}{'RSI(14)':<9}{'50-SMA':<8}{'ACTION STATUS'}")
+    print("-" * 77)
 
     for item in valid_scores:
         ticker = item['ticker']
-        domain = item['domain']
         nqs = item['nqs']
-        price = prices.get(ticker, 0.0)
         
+        # Pull live technical signals
+        tech = fetch_technical_signals(ticker)
+        price = tech["close_price"]
+        rsi = tech["rsi_14"]
+        above_sma = tech["above_50_sma"]
+        
+        # Pro-rata weight allocation
         target_weight = nqs / total_nqs
         target_dollar = total_capital * target_weight
-        target_shares = target_dollar / price if price > 0 else 0.0
         
-        short_domain = domain.replace('components_grid', 'Components').replace('fuel_cycle', 'Fuel Cycle').replace('smr_pureplay', 'SMR Play')
+        # Determine actionable status based on technical rules
+        sma_status = "ABOVE" if above_sma else "BELOW"
+        
+        if rsi is not None:
+            if rsi >= 70.0:
+                action = "HOLD (Overbought)"
+            elif rsi <= 35.0 and above_sma:
+                action = "💥 BUY ALERT (Dip)"
+            elif above_sma:
+                action = "✅ EXECUTE BUY"
+            else:
+                action = "WAIT (No Trend)"
+        else:
+            action = "DATA ERROR"
 
-        print(f"{ticker:<8}{short_domain:<18}{nqs:<8}{target_weight*100:<11.2f}% ${target_dollar:<10.2f}{target_shares:.2f}")
-    print(f"==============================================================")
+        rsi_display = str(rsi) if rsi is not None else "N/A"
+
+        print(f"{ticker:<8}{nqs:<6}{target_weight*100:<9.1f}% ${target_dollar:<9.2f}${price:<8.2f}{rsi_display:<9}{sma_status:<8}{action}")
+    print(f"=============================================================================")
 
 if __name__ == "__main__":
     generate_order_sheet(total_capital=10000)

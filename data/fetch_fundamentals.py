@@ -1,23 +1,48 @@
 """
-Pulls automatable fundamental data for NQS scoring via yfinance.
-
-Covers two of the three NQS buckets:
-  - Balance Sheet Runway  (Net Debt/EBITDA for established names, cash-runway
-    quarters for pre-revenue SMRs)
-  - Margin Expansion      (gross margin YoY trend, ROIC)
-
-Does NOT cover Backlog Momentum (12-mo backlog growth, book-to-bill) — that
-data isn't in any free API. It lives in manual_overrides.json instead. See
-scoring/nqs_scorer.py for how the buckets combine.
+Pulls automatable fundamental and technical data for NQS scoring via yfinance.
 """
 
 import yfinance as yf
+import pandas as pd
+
+def fetch_technical_signals(ticker: str) -> dict:
+    """
+    Calculates the 14-day RSI and evaluates if the current price 
+    is trading above its 50-day Simple Moving Average (SMA).
+    """
+    try:
+        t = yf.Ticker(ticker)
+        hist = t.history(period="6mo")
+        if hist.empty or len(hist) < 50:
+            return {"rsi_14": None, "above_50_sma": False, "close_price": 0.0}
+
+        close_prices = hist['Close']
+        last_price = float(close_prices.iloc[-1])
+
+        # 1. Calculate 50-day Simple Moving Average
+        sma_50 = float(close_prices.rolling(window=50).mean().iloc[-1])
+        above_50_sma = last_price > sma_50
+
+        # 2. Calculate 14-day RSI
+        delta = close_prices.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        
+        rs = gain / loss
+        rsi_14 = float(100 - (100 / (1 + rs)).iloc[-1])
+
+        return {
+            "rsi_14": round(rsi_14, 2),
+            "above_50_sma": above_50_sma,
+            "close_price": round(last_price, 2)
+        }
+    except Exception:
+        return {"rsi_14": None, "above_50_sma": False, "close_price": 0.0}
 
 
 def fetch_balance_sheet_runway(ticker: str, is_pre_revenue: bool = False) -> dict:
     """
-    Returns either a net_debt_to_ebitda figure (established companies) or a
-    cash_runway_quarters figure (pre-revenue SMRs), depending on stage.
+    Returns either a net_debt_to_ebitda figure or a cash_runway_quarters figure.
     """
     t = yf.Ticker(ticker)
     info = t.info or {}
@@ -64,9 +89,6 @@ def fetch_balance_sheet_runway(ticker: str, is_pre_revenue: bool = False) -> dic
 def fetch_margin_expansion(ticker: str) -> dict:
     """
     Returns current gross margin, YoY gross margin trend, and an ROIC estimate.
-    All three can come back as None for thin/early-stage names — that's
-    informative, not a bug, and the scorer should treat None as "no points,"
-    not "zero points."
     """
     t = yf.Ticker(ticker)
     info = t.info or {}
@@ -80,7 +102,6 @@ def fetch_margin_expansion(ticker: str) -> dict:
             gross_profit = fin.loc["Gross Profit"]
             margins = (gross_profit / revenue).dropna()
             if len(margins) >= 2:
-                # yfinance columns are most-recent-first
                 gross_margin_trend = float(margins.iloc[0] - margins.iloc[1])
     except Exception:
         pass
