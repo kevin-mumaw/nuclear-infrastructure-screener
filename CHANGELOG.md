@@ -1,6 +1,12 @@
 # Changelog — Second Layer Capital Nuclear Screener
 
 All notable changes, algorithmic updates, and fundamental override calibrations for the systematic Nuclear Infrastructure "Picks & Shovels" strategy will be documented in this file.
+
+## - 2026-06-23 (Automated Paper Ledger Update)
+### Added
+- Created `logger.py` module to handle local CSV database initialization and automated fractional share scaling metrics.
+- Linked transaction logger directly into `allocator.py` to create an interactive terminal trading prompt.
+
 ## - 2026-06-22 (Technical Integration Update)
 ### Added
 - Implemented `fetch_technical_signals` function inside `data/fetch_fundamentals.py` to calculate a 14-day RSI and 50-day SMA trend status.
