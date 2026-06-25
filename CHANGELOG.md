@@ -2,6 +2,11 @@
 
 All notable changes, algorithmic updates, and fundamental override calibrations for the systematic Nuclear Infrastructure "Picks & Shovels" strategy will be documented in this file.
 
+## - 2026-06-24 (Advanced Analytics & Risk Tracking Integration)
+### Added
+- Created `metrics.py` performance analysis engine to dynamically cross-reference `trade_log.csv` against live yfinance tracking data.
+- Created `gap_warner.py` overnight volatility monitoring module implementing a automated \(\pm 3.0\%\) price dislocation structural warning alert flag.
+
 ## - 2026-06-23 (Automated Paper Ledger Update)
 ### Added
 - Created `logger.py` module to handle local CSV database initialization and automated fractional share scaling metrics.
