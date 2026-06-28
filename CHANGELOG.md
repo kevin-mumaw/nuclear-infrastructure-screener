@@ -2,6 +2,11 @@
 
 All notable changes, algorithmic updates, and fundamental override calibrations for the systematic Nuclear Infrastructure "Picks & Shovels" strategy will be documented in this file.
 
+## - 2026-06-24 (Visualization & Dynamic Alerts Update)
+### Added
+- Created `chart_engine.py` module leveraging matplotlib data mapping arrays to visualize running equity history metrics and drawdown boundaries.
+- Re-architected `publish_x.py` to intercept live volatility metrics and dynamically adjust character-capped 280-char templates when trend gaps expand past ±3.0%.
+
 ## - 2026-06-24 (Advanced Analytics & Risk Tracking Integration)
 ### Added
 - Created `metrics.py` performance analysis engine to dynamically cross-reference `trade_log.csv` against live yfinance tracking data.
