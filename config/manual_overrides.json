@@ -1,45 +1,53 @@
 {
-  "_comment": "Backlog Momentum bucket updated as of June 2026 earnings cycle tracking.",
-  "GEV": {
-    "backlog_growth_yoy": 0.25,
-    "book_to_bill": 1.96,
-    "backlog_score_0_10": 10,
-    "last_updated": "2026-06-22",
-    "source": "Q1 2026 Earnings Release"
-  },
+  "_comment": "Backlog Momentum bucket. Manually populated from 10-Q filings and earnings supplements. Only tickers in BACKLOG_RELEVANT_TICKERS (components_grid and epc domains) carry entries. Update each earnings cycle.",
+  "_last_updated": "2026-09-07",
+  "_data_period": "Q2 2026 (most recent available)",
+
   "BWXT": {
-    "backlog_growth_yoy": 0.14,
-    "book_to_bill": 1.15,
-    "backlog_score_0_10": 8,
-    "last_updated": "2026-06-22",
-    "source": "Q1 2026 Presentation"
+    "backlog_growth_yoy": 0.400,
+    "book_to_bill": 1.70,
+    "backlog_score_0_10": null,
+    "last_updated": "2026-09-07",
+    "source": "BWXT Q2 2026 10-Q — record $8.40B backlog vs $6.00B Q2 2025 (+40% YoY). BTB 1.70x TTM. Management cited multi-decade nuclear growth super-cycle driven by accelerated U.S. naval nuclear components procurement."
   },
-  "FLR": {
-    "backlog_growth_yoy": 0.05,
-    "book_to_bill": 0.75,
-    "backlog_score_0_10": 3,
-    "last_updated": "2026-06-22",
-    "source": "Q1 2026 Report"
+
+  "GEV": {
+    "backlog_growth_yoy": 0.770,
+    "book_to_bill": 2.00,
+    "backlog_score_0_10": null,
+    "last_updated": "2026-09-07",
+    "source": "GEV Q2 2026 earnings supplement — $176.0B total backlog, equipment backlog $88.0B (+77% YoY). Quarterly orders $24.2B vs $11.1B revenue. Data center grid electrification and multi-GW gas/nuclear turbine pipelines drove $13.0B sequential expansion."
   },
+
   "FLS": {
-    "backlog_growth_yoy": 0.02,
-    "book_to_bill": 1.02,
-    "backlog_score_0_10": 6,
-    "last_updated": "2026-06-22",
-    "source": "Q1 2026 Estimate"
+    "backlog_growth_yoy": 0.163,
+    "book_to_bill": 1.15,
+    "backlog_score_0_10": null,
+    "last_updated": "2026-09-07",
+    "source": "FLS Q2 2026 10-Q — $3.34B backlog vs $2.87B Q2 2025 (+16.3% YoY). Bookings $1.35B vs $1.17B revenue. Nuclear bookings exceeded $110M driven by life extension projects in North America and large-reactor pump/valve allocations in Asia."
   },
+
   "IR": {
-    "backlog_growth_yoy": 0.0,
-    "book_to_bill": 0.98,
-    "backlog_score_0_10": 3,
-    "last_updated": "2026-06-22",
-    "source": "Internal Estimate"
+    "backlog_growth_yoy": null,
+    "book_to_bill": 1.00,
+    "backlog_score_0_10": null,
+    "last_updated": "2026-09-07",
+    "source": "IR Q2 2026 earnings call — short-cycle manufacturing model, no consolidated multi-year backlog reported. Orders $2,042.9M vs revenue $2,049.0M (BTB 1.00x). Organic orders +2% YoY. Management flagged low-double-digit to mid-teens order acceleration in July as long-cycle infrastructure projects cleared bottlenecks. backlog_growth_yoy intentionally null."
   },
+
   "J": {
-    "backlog_growth_yoy": 0.04,
-    "book_to_bill": 1.05,
-    "backlog_score_0_10": 6,
-    "last_updated": "2026-06-22",
-    "source": "Internal Estimate"
+    "backlog_growth_yoy": 0.273,
+    "book_to_bill": 1.20,
+    "backlog_score_0_10": null,
+    "last_updated": "2026-09-07",
+    "source": "Jacobs FQ3 2026 — $28.89B backlog vs $22.70B prior year (+27.3% YoY). BTB 1.20x quarterly, 1.40x TTM. Data center segment +100% YoY, AI infrastructure pipeline +400% with visibility into 2028."
+  },
+
+  "FLR": {
+    "backlog_growth_yoy": -0.02,
+    "book_to_bill": 1.41,
+    "backlog_score_0_10": null,
+    "last_updated": "2026-09-07",
+    "source": "FLR Q2 2026 — $26.90B backlog, flat/slightly down YoY (impacted by $650M Mexico JV divestiture removal). New awards $6.1B vs $4.33B quarterly revenue (BTB 1.41x). 85% of active backlog now reimbursable/cost-plus. Execution turnaround expected to filter into ROIC by 2027. NQS gate remains locked on negative fundamentals despite healthy new award flow."
   }
 }
