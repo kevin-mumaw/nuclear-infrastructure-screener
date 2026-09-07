@@ -1,0 +1,9 @@
+{
+  "_comment": "Backlog Momentum bucket. No free API covers 12-month backlog growth or book-to-bill — pull these from 10-Q/10-K filings or investor presentations each earnings cycle. Only tickers in BACKLOG_RELEVANT_TICKERS (components_grid and epc domains) need entries; everything else is intentionally absent.",
+  "BWXT": {"backlog_growth_yoy": null, "book_to_bill": null, "backlog_score_0_10": null, "last_updated": null, "source": null},
+  "GEV": {"backlog_growth_yoy": null, "book_to_bill": null, "backlog_score_0_10": null, "last_updated": null, "source": null},
+  "FLS": {"backlog_growth_yoy": null, "book_to_bill": null, "backlog_score_0_10": null, "last_updated": null, "source": null},
+  "IR": {"backlog_growth_yoy": null, "book_to_bill": null, "backlog_score_0_10": null, "last_updated": null, "source": null},
+  "J": {"backlog_growth_yoy": null, "book_to_bill": null, "backlog_score_0_10": null, "last_updated": null, "source": null},
+  "FLR": {"backlog_growth_yoy": null, "book_to_bill": null, "backlog_score_0_10": null, "last_updated": null, "source": null}
+}
