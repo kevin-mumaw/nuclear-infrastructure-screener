@@ -6,19 +6,14 @@ Covers two of the three NQS buckets:
     quarters for pre-revenue SMRs)
   - Margin Expansion      (gross margin YoY trend, ROIC)
 
-Does NOT cover Backlog Momentum (12-mo backlog growth, book-to-bill) — that
-data isn't in any free API. It lives in manual_overrides.json instead. See
-scoring/nqs_scorer.py for how the buckets combine.
+Does NOT cover Backlog Momentum (12-mo backlog growth, book-to-bill) -- that
+data is not in any free API. It lives in manual_overrides.json instead.
 """
 
 import yfinance as yf
 
 
 def fetch_balance_sheet_runway(ticker: str, is_pre_revenue: bool = False) -> dict:
-    """
-    Returns either a net_debt_to_ebitda figure (established companies) or a
-    cash_runway_quarters figure (pre-revenue SMRs), depending on stage.
-    """
     t = yf.Ticker(ticker)
     info = t.info or {}
 
@@ -62,12 +57,6 @@ def fetch_balance_sheet_runway(ticker: str, is_pre_revenue: bool = False) -> dic
 
 
 def fetch_margin_expansion(ticker: str) -> dict:
-    """
-    Returns current gross margin, YoY gross margin trend, and an ROIC estimate.
-    All three can come back as None for thin/early-stage names — that's
-    informative, not a bug, and the scorer should treat None as "no points,"
-    not "zero points."
-    """
     t = yf.Ticker(ticker)
     info = t.info or {}
 
@@ -80,7 +69,6 @@ def fetch_margin_expansion(ticker: str) -> dict:
             gross_profit = fin.loc["Gross Profit"]
             margins = (gross_profit / revenue).dropna()
             if len(margins) >= 2:
-                # yfinance columns are most-recent-first
                 gross_margin_trend = float(margins.iloc[0] - margins.iloc[1])
     except Exception:
         pass

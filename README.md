@@ -1,63 +1,28 @@
-# Nuclear Infrastructure Screener
-Second book under Second Layer Capital. Companion repo to `hypersonic-defense-screener`.
+# Second Layer Capital — Nuclear Infrastructure Screener ⚛️
 
-## What this is (v1 scaffold)
+A systematic, quantitative "picks-and-shovels" investment framework and stock evaluation engine targeting critical supply chain bottlenecks across the nuclear energy sector. 
 
-A Nuclear Quality Score (NQS) engine across the five domains defined in
-`nuclear-infrastructure-thesis.md`. Three scoring buckets, 0-10 each, averaged
-across whichever buckets actually apply to a ticker and scaled to 0-100:
+## 🗺️ Strategy Architecture
+This system actively monitors structural layers to prioritize companies capturing high-moat infrastructure premiums over standard regulated utilities:
+1. **Fuel Cycle Moat** — High-assay low-enriched uranium (HALEU) enrichment monopolies and mining operations.
+2. **Reactor Components & Grid Infrastructure** — Industrial hardware manufacturers, naval propulsion suppliers, and grid enablers.
+3. **SMR / Advanced Reactor Pure-Plays** — Speculative structural engineers under technical review by the U.S. NRC.
+4. **Engineering, Procurement & Construction (EPC)** — Complex multi-year scale deployment project handlers.
 
-1. **Backlog Momentum** — components_grid and epc domains only (BWXT, GEV,
-   FLS, IR, J, FLR). Manually maintained in `config/manual_overrides.json`
-   since no free API reports backlog or book-to-bill.
-2. **Balance Sheet Runway** — all tickers. Net Debt/EBITDA for established
-   names, cash-runway-in-quarters for pre-revenue SMRs (OKLO, SMR).
-3. **Margin Expansion** — all tickers, via gross margin YoY trend and ROIC.
-   Commonly returns N/A for pre-revenue names — that's correct, not broken.
+## 🧮 Nuclear Quality Score (NQS) Engine
+The engine calculates a score from 0-100 by aggregating three core fundamental pillars:
+* **Backlog Momentum** — Tracks book-to-bill metrics and 12-month backlog growth pulled directly from SEC filings (`config/manual_overrides.json`).
+* **Balance Sheet Runway** — Automatically tracks Net Debt/EBITDA safety or cash runway quarters for pre-revenue names.
+* **Margin Expansion** — Evaluates live gross margin trajectories and Return on Invested Capital (ROIC) efficiency.
 
-## Setup
+*Note: Pre-revenue SMR plays automatically utilize specialized evaluation filters to bypass standard margin inputs, protecting them from data distortion.*
 
-```
-python -m venv venv
-venv\Scripts\activate          (Windows)
-pip install -r requirements.txt
-```
+## ⚙️ Technical Filter Overlay
+Before suggesting any capital deployment, allocations are ran through an execution momentum filter:
+* **Trend Gate**: Requires asset price to trace firmly above its 50-day Simple Moving Average (SMA).
+* **Momentum Gate**: Checks 14-day RSI parameters to prevent chasing overbought expansions (RSI > 70) and isolate optimal dip-buying zones.
 
-## Running it
-
-```
-python main.py
-```
-
-Prints a ranked table of every ticker in the active universe with its NQS
-and which buckets contributed to it.
-
-## Before this is trustworthy
-
-- `config/manual_overrides.json` is all `null` right now. Pull backlog growth
-  and book-to-bill for BWXT/GEV/FLS/IR/J/FLR from their latest 10-Q or
-  investor deck and fill it in — otherwise those six tickers are only being
-  scored on 2 of 3 buckets.
-- The scoring thresholds in `scoring/nqs_scorer.py` are starter calibration,
-  not backtested. Same situation the options scanner was in before min_score
-  moved from 6 to 7 — expect to revisit these once there's a few quarters of
-  NQS history to check against forward returns.
-- No backtesting or Streamlit dashboard yet. This is Phase 1 (the scoring
-  engine itself) — Phase 2 (backtesting, thesis overrides) and Phase 2b
-  (intelligence monitoring + dashboard) come after this is validated, same
-  sequence as the hypersonic build.
-
-## Files
-
-```
-nuclear-infrastructure-screener/
-├── main.py                       entry point, prints the daily report
-├── requirements.txt
-├── config/
-│   ├── universe.py                ticker universe by domain
-│   └── manual_overrides.json      backlog/book-to-bill, manual entry
-├── data/
-│   └── fetch_fundamentals.py      yfinance pulls for the two automated buckets
-└── scoring/
-    └── nqs_scorer.py               NQS calculation logic
-```
+## 🚀 Repository Blueprint
+* `allocator.py` — The core terminal execution dashboard calculating target weights, share counts, and technical buy signals.
+* `logger.py` — Paper-trade transaction ledger module writing directly to local spreadsheet databases (`data/trade_log.csv`).
+* `publish_x.py` — High-impact, character-safe micro-reporting module built under strict 280-character posting guidelines.
