@@ -51,6 +51,10 @@ def fetch_balance_sheet_runway(ticker: str, is_pre_revenue: bool = False) -> dic
     net_debt_to_ebitda = None
     if total_debt is not None and total_cash is not None and ebitda:
         net_debt = total_debt - total_cash
+        # NOTE: a negative EBITDA yields a negative ratio, which is NOT a
+        # low-leverage signal -- the scorer (score_balance_sheet_runway)
+        # scores it 0. Do not "fix" the sign here; the raw ebitda below
+        # is what lets the scorer tell net cash apart from losses.
         net_debt_to_ebitda = net_debt / ebitda if ebitda != 0 else None
 
     return {

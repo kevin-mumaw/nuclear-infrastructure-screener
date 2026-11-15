@@ -15,17 +15,18 @@ def generate_order_sheet(total_capital=10000):
 
     total_nqs = sum(item['nqs'] for item in valid_scores)
     
-    print(f"\n=============================================================================")
+    print(f"\n===================================================================================")
     print(f"         SECOND LAYER CAPITAL — NUCLEAR ALLOCATION & TECHNICAL FILTER        ")
     print(f"         TOTAL CASH BUDGET: ${total_capital:,}                                 ")
-    print(f"=============================================================================")
-    print(f"{'TICKER':<8}{'NQS':<6}{'TARGET %':<10}{'DOLLAR':<10}{'PRICE':<9}{'RSI(14)':<9}{'50-SMA':<8}{'ACTION STATUS'}")
-    print("-" * 77)
+    print(f"===================================================================================")
+    print(f"{'TICKER':<8}{'NQS':<6}{'BKTS':<6}{'TARGET %':<10}{'DOLLAR':<10}{'PRICE':<9}{'RSI(14)':<9}{'50-SMA':<8}{'ACTION STATUS'}")
+    print("-" * 83)
 
     for item in valid_scores:
         ticker = item['ticker']
         nqs = item['nqs']
-        
+        coverage = f"{item['bucket_count']}/{item['buckets_possible']}"
+
         # Pull live technical signals
         tech = fetch_technical_signals(ticker)
         price = tech["close_price"]
@@ -35,7 +36,7 @@ def generate_order_sheet(total_capital=10000):
         # No usable price history: print a DATA ERROR line and skip cleanly
         # instead of crashing on the ${price:.2f} formatting below.
         if price is None:
-            print(f"{ticker:<8}{nqs:<6}DATA ERROR — no price data, skipped")
+            print(f"{ticker:<8}{nqs:<6}{coverage:<6}DATA ERROR — no price data, skipped")
             continue
         
         # Pro-rata weight allocation
@@ -59,8 +60,8 @@ def generate_order_sheet(total_capital=10000):
 
         rsi_display = str(rsi) if rsi is not None else "N/A"
 
-        print(f"{ticker:<8}{nqs:<6}{target_weight*100:<9.1f}% ${target_dollar:<9.2f}${price:<8.2f}{rsi_display:<9}{sma_status:<8}{action}")
-    print(f"=============================================================================")
+        print(f"{ticker:<8}{nqs:<6}{coverage:<6}{target_weight*100:<9.1f}% ${target_dollar:<9.2f}${price:<8.2f}{rsi_display:<9}{sma_status:<8}{action}")
+    print(f"===================================================================================")
 
 if __name__ == "__main__":
     generate_order_sheet(total_capital=10000)

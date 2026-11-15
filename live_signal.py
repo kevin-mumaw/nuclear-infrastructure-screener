@@ -63,7 +63,12 @@ def load_prices():
 
 
 def load_nqs_scores():
+    """Returns (scores, coverage): NQS per ticker and bucket coverage
+    ("n/m" — buckets actually scored / buckets possible for the domain),
+    so a one-bucket 100 cannot be mistaken for a three-bucket 100 on the
+    order sheet."""
     scores = {}
+    coverage = {}
     try:
         from scoring.nqs_scorer import calculate_nqs
         overrides = {}
@@ -73,9 +78,13 @@ def load_nqs_scores():
         for ticker in TICKERS:
             result = calculate_nqs(ticker, overrides)
             scores[ticker] = result.get("nqs")
+            coverage[ticker] = (
+                f"{result.get('bucket_count')}/{result.get('buckets_possible')}"
+                if result.get("bucket_count") is not None else "--"
+            )
     except Exception as e:
         print(f"  [NQS] Warning: could not load NQS scores ({e})")
-    return scores
+    return scores, coverage
 
 
 def load_state():
@@ -91,7 +100,7 @@ def save_state(basket):
         json.dump(state, f, indent=2)
 
 
-def build_signal(equity_prices, nqs_scores):
+def build_signal(equity_prices, nqs_scores, coverage=None):
     if len(equity_prices) < MOMENTUM_WINDOW + 1:
         print(f"  [SIGNAL] Not enough price history.")
         return []
@@ -118,6 +127,7 @@ def build_signal(equity_prices, nqs_scores):
         qualifying.append({
             "ticker":   ticker,
             "nqs":      nqs if nqs is not None else "--",
+            "buckets":  (coverage or {}).get(ticker, "--"),
             "momentum": round(momentum * 100, 1),
             "drawdown": round(drawdown * 100, 1),
             "price":    round(current_price, 2),
@@ -140,6 +150,7 @@ def build_order_sheet(basket, defensive_price):
         orders.append({
             "ticker":      item["ticker"],
             "nqs":         item["nqs"],
+            "buckets":     item.get("buckets", "--"),
             "momentum":    item["momentum"],
             "drawdown":    item["drawdown"],
             "last_close":  item["price"],
@@ -156,6 +167,7 @@ def build_order_sheet(basket, defensive_price):
         orders.append({
             "ticker":      DEFENSIVE,
             "nqs":         "--",
+            "buckets":     "--",
             "momentum":    "--",
             "drawdown":    "--",
             "last_close":  round(defensive_price, 2),
@@ -209,7 +221,7 @@ def print_report(orders, added, removed, state):
     print("  ORDER SHEET -- Enter in Schwab before market open")
     print(f"  Order type: BUY LIMIT  |  Duration: DAY  |  Offset: +{LIMIT_OFFSET*100:.1f}% above prior close")
     print()
-    print(f"  {'TICKER':<8} {'TYPE':<10} {'NQS':<6} {'MOM%':<8} {'DD%':<8} {'CLOSE':<8} {'LIMIT':<8} {'SHARES':<8} {'COST'}")
+    print(f"  {'TICKER':<8} {'TYPE':<10} {'NQS':<6} {'BKTS':<6} {'MOM%':<8} {'DD%':<8} {'CLOSE':<8} {'LIMIT':<8} {'SHARES':<8} {'COST'}")
     print_divider()
 
     total_deployed = 0
@@ -217,7 +229,7 @@ def print_report(orders, added, removed, state):
         nqs_str = str(o["nqs"])
         mom_str = f"{o['momentum']}%" if o["momentum"] != "--" else "--"
         dd_str  = f"{o['drawdown']}%" if o["drawdown"] != "--" else "--"
-        print(f"  {o['ticker']:<8} {o['type']:<10} {nqs_str:<6} {mom_str:<8} {dd_str:<8} ${o['last_close']:<7} ${o['limit_price']:<7} {o['shares']:<8} ${o['actual_cost']}")
+        print(f"  {o['ticker']:<8} {o['type']:<10} {nqs_str:<6} {str(o.get('buckets', '--')):<6} {mom_str:<8} {dd_str:<8} ${o['last_close']:<7} ${o['limit_price']:<7} {o['shares']:<8} ${o['actual_cost']}")
         total_deployed += o["actual_cost"]
 
     print_divider()
@@ -254,12 +266,12 @@ def main():
     print(f"  [DATA] {len(equity_prices)} trading days loaded. Latest close: {equity_prices.index[-1].strftime('%Y-%m-%d')}")
 
     print("  [NQS]  Loading Nuclear Quality Scores...")
-    nqs_scores = load_nqs_scores()
+    nqs_scores, nqs_coverage = load_nqs_scores()
     scored = {t: v for t, v in nqs_scores.items() if v is not None}
     print(f"  [NQS]  {len(scored)}/{len(TICKERS)} tickers scored. Gate >= {NQS_GATE}.")
 
     print(f"  [SIG]  Running {MOMENTUM_WINDOW}-day momentum filter + NQS gate...")
-    basket = build_signal(equity_prices, nqs_scores)
+    basket = build_signal(equity_prices, nqs_scores, nqs_coverage)
 
     if not basket:
         print("  [SIG]  No tickers passed all filters. Full allocation to USFR.")
