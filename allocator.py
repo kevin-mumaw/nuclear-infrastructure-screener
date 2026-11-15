@@ -31,6 +31,12 @@ def generate_order_sheet(total_capital=10000):
         price = tech["close_price"]
         rsi = tech["rsi_14"]
         above_sma = tech["above_50_sma"]
+
+        # No usable price history: print a DATA ERROR line and skip cleanly
+        # instead of crashing on the ${price:.2f} formatting below.
+        if price is None:
+            print(f"{ticker:<8}{nqs:<6}DATA ERROR — no price data, skipped")
+            continue
         
         # Pro-rata weight allocation
         target_weight = nqs / total_nqs
