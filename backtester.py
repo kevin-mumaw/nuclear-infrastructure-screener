@@ -11,11 +11,23 @@ Architecture:
   Layer 3 — NQS Filter      : Optional quality gate. Valid NQS score → must clear
                                NQS_MIN_THRESHOLD. Null NQS → passes on price signals
                                alone. Never excluded solely for missing NQS data.
+                               LOOKAHEAD WARNING: load_nqs_scores() computes
+                               TODAY's NQS once and applies it to every trade
+                               back to 2022. A gated run is therefore
+                               IN-SAMPLE, not a tradable result. main() runs
+                               both an ungated (honest) variant and a gated
+                               variant labeled "(in-sample)".
   Layer 4 — Position Logic  : Equal-weight qualifying assets, 0.05% slippage on
                                rebalance days, SGOV rotation when nothing qualifies.
-  Layer 5 — Metrics         : Total return, annualized vol, Sharpe, max drawdown,
-                               benchmark (equal-weight buy-and-hold, explicit per-day
-                               valid ticker count — no silent denominator shifting).
+  Layer 5 — Metrics         : Total return, annualized vol, Sharpe, max drawdown.
+                               Two benchmarks, both aligned to the same trading
+                               days as the strategy they are compared with:
+                               (a) true buy-and-hold — equal dollars in each
+                               ticker valid on the start day, shares fixed,
+                               weights drift; (b) daily-rebalanced
+                               equal-weight — mean daily return of the valid
+                               tickers, rebalanced every day (the ORIGINAL
+                               benchmark, kept and labeled honestly).
 
 Momentum windows tested: 14-day (fast), 60-day (institutional), 200-day (macro).
 Risk controls: 15% trailing drawdown stop-loss, 100% take-profit, 0.05% slippage.
@@ -124,23 +136,58 @@ def build_signals(equity_prices: pd.DataFrame, window: int) -> tuple[pd.DataFram
 # ── Layer 3: NQS Filter ───────────────────────────────────────────────────────
 
 def load_nqs_scores() -> dict:
-    scores = {t: None for t in TICKERS}
+    """Load TODAY's NQS for every ticker.
+
+    Per-ticker failures score that ticker None (it then passes on price
+    signals alone, by design — a missing score never excludes a ticker).
+    A TOTAL failure — scorer unimportable, overrides unreadable, or no
+    ticker scores at all — raises RuntimeError. The gate must never
+    silently vanish: a backtest that quietly drops its quality gate is
+    worse than no backtest. Callers that can proceed without the gate
+    (main()) catch this, print a loud banner, and run ungated only.
+    """
     try:
         from scoring.nqs_scorer import calculate_nqs
-        overrides = {}
-        if os.path.exists(OVERRIDES_PATH):
+    except Exception as e:
+        raise RuntimeError(
+            "NQS gate unavailable: cannot import scoring.nqs_scorer "
+            f"({e}). Refusing to run a gated backtest on price signals alone."
+        ) from e
+
+    overrides = {}
+    if os.path.exists(OVERRIDES_PATH):
+        try:
             with open(OVERRIDES_PATH) as f:
                 overrides = json.load(f)
-        for ticker in TICKERS:
+        except Exception as e:
+            raise RuntimeError(
+                f"NQS gate unavailable: cannot read {OVERRIDES_PATH} ({e})."
+            ) from e
+
+    scores = {}
+    failures = {}
+    for ticker in TICKERS:
+        try:
             result = calculate_nqs(ticker, overrides)
             scores[ticker] = result.get("nqs")
-    except Exception as e:
-        print(f"[NQS] Could not load NQS scores ({e}). "
-              f"All tickers pass on price signals alone.")
+        except Exception as e:
+            scores[ticker] = None
+            failures[ticker] = str(e)
+
+    for ticker, err in failures.items():
+        print(f"[NQS] {ticker}: score failed ({err}) — passes on price signals alone.")
+
+    if all(v is None for v in scores.values()):
+        raise RuntimeError(
+            "NQS gate unavailable: no ticker scored. "
+            "Refusing to run a gated backtest on price signals alone."
+        )
     return scores
 
 
 def nqs_passes(ticker: str, nqs_scores: dict) -> bool:
+    if nqs_scores is None:
+        return True  # ungated variant: no NQS check at all
     score = nqs_scores.get(ticker)
     if score is None:
         return True
@@ -150,6 +197,14 @@ def nqs_passes(ticker: str, nqs_scores: dict) -> bool:
 # ── Layer 4: Position Construction ───────────────────────────────────────────
 
 def run_backtest(equity_prices, defensive_prices, window, nqs_scores):
+    """Run one momentum variant.
+
+    nqs_scores=None means UNGATED (momentum + drawdown only — the honest
+    variant). A dict means gated on today's NQS (in-sample — see the
+    module docstring; the gate is lookahead, not a tradable result).
+    Risk controls are unchanged: 15% trailing-drawdown stop, 100%
+    take-profit, 0.05% slippage on rebalance days.
+    """
     momentum_scores, asset_drawdowns = build_signals(equity_prices, window)
     equity_returns    = equity_prices.pct_change()
     defensive_returns = defensive_prices.pct_change()
@@ -186,7 +241,7 @@ def run_backtest(equity_prices, defensive_prices, window, nqs_scores):
                 trade_log.append({"date": current_day, "ticker": ticker,
                                    "event": "take_profit", "gain_pct": round(current_gain * 100, 2)})
                 continue
-            if not nqs_passes(ticker, nqs_scores):
+            if nqs_scores is not None and not nqs_passes(ticker, nqs_scores):
                 continue
             basket.append(ticker)
 
@@ -237,15 +292,50 @@ def calc_metrics(returns: pd.Series, label: str) -> dict:
     }
 
 
-def build_benchmark(equity_prices, max_window):
-    returns    = equity_prices.pct_change()
-    bench_days = equity_prices.index[max_window + 1:]
+def build_benchmark_buy_and_hold(equity_prices, start_idx):
+    """TRUE buy-and-hold benchmark: fixed shares, weights drift.
+
+    Equal dollars in each ticker that has a valid price on the start
+    day; the share counts then stay fixed, so weights drift with
+    prices — that is what buy-and-hold means. A ticker that lists
+    later never joins (it did not exist on the start day), and a
+    ticker's mid-series price gap is carried forward at its last
+    growth factor. Returns start on index[start_idx + 1], the same
+    first trading day as a strategy with window=start_idx, so the
+    comparison covers identical days.
+    """
+    start_day = equity_prices.index[start_idx]
+    start_prices = equity_prices.loc[start_day].dropna()
+    if start_prices.empty:
+        return pd.Series(dtype=float), pd.Series(dtype=float)
+
+    growth = equity_prices[start_prices.index].div(start_prices).ffill()
+    bench_value = growth.mean(axis=1).loc[equity_prices.index[start_idx:]]
+    bench_days = equity_prices.index[start_idx + 1:]
+    bench_daily = bench_value.pct_change().loc[bench_days].fillna(0.0)
+    return bench_daily, bench_value
+
+
+def build_benchmark_equal_weight(equity_prices, start_idx):
+    """Daily-rebalanced equal-weight benchmark (the ORIGINAL benchmark).
+
+    Each day the return is the mean daily return of the tickers with a
+    valid return that day — i.e. the portfolio is rebalanced back to
+    equal weight EVERY day. This is NOT buy-and-hold: weights never
+    drift, and a ticker that lists later joins at full equal weight
+    the day its first return appears. Kept for continuity with
+    earlier runs, labeled honestly. Returns start on
+    index[start_idx + 1], the same first trading day as a strategy
+    with window=start_idx.
+    """
+    returns = equity_prices.pct_change()
+    bench_days = equity_prices.index[start_idx + 1:]
     bench_returns_list = []
     prev_count = None
-    comp_log   = []
+    comp_log = []
 
     for day in bench_days:
-        valid       = returns.loc[day].dropna()
+        valid = returns.loc[day].dropna()
         valid_count = len(valid)
         if valid_count == 0:
             bench_returns_list.append(0.0)
@@ -260,20 +350,31 @@ def build_benchmark(equity_prices, max_window):
         print(entry)
 
     bench_daily = pd.Series(bench_returns_list, index=bench_days)
-    return bench_daily, (1 + bench_daily).cumprod()
+    bench_curve = pd.Series([1.0] + list((1 + bench_daily).cumprod()),
+                            index=equity_prices.index[start_idx:])
+    return bench_daily, bench_curve
 
 
 # ── Chart ─────────────────────────────────────────────────────────────────────
 
-def plot_equity_curves(curves, output_path):
+def strategy_label(window: int, gated: bool) -> str:
+    """Label for one momentum variant. The gated variant is always
+    marked in-sample: its NQS gate is today's scores applied to the
+    whole history (lookahead), not a tradable result."""
+    if gated:
+        return f"{window}-Day Momentum + NQS gate (in-sample)"
+    return f"{window}-Day Momentum"
+
+
+def plot_equity_curves(curves, output_path, title_suffix=""):
     plt.style.use("dark_background")
     fig, ax = plt.subplots(figsize=(13, 7))
-    colors  = ["#00ffcc", "#ff9900", "#4fc3f7"]
+    colors = ["#00ffcc", "#ff9900", "#4fc3f7", "#ff6b6b", "#c792ea", "#aed581"]
 
     for idx, (label, curve) in enumerate(curves.items()):
         if curve is None or curve.empty:
             continue
-        if label.startswith("Benchmark"):
+        if "Buy & Hold" in label or "Equal-Weight" in label:
             ax.plot(curve.index, curve.values, label=label,
                     color="#888888", linestyle="--", linewidth=1.5, alpha=0.7)
         else:
@@ -281,7 +382,8 @@ def plot_equity_curves(curves, output_path):
                     color=colors[idx % len(colors)], linewidth=2)
 
     ax.set_title("Second Layer Capital — Nuclear Infrastructure\n"
-                 "Momentum Strategy vs. Benchmark (Equal-Weight Buy & Hold)",
+                 "Momentum Strategy vs. Benchmarks"
+                 + (f" ({title_suffix})" if title_suffix else ""),
                  fontsize=13, fontweight="bold", pad=15)
     ax.set_xlabel("Date", fontsize=11, labelpad=8)
     ax.set_ylabel("Growth of $1.00", fontsize=11, labelpad=8)
@@ -299,14 +401,20 @@ def plot_equity_curves(curves, output_path):
 
 # ── Report ────────────────────────────────────────────────────────────────────
 
-def print_report(metrics_list, nqs_scores):
-    null_count = sum(1 for v in nqs_scores.values() if v is None)
+def print_report(metrics_list, run_info):
+    """Print the backtest matrix.
+
+    run_info: {"start_date", "end_date", "data_start", "data_end",
+    "nqs_gate"} — the run window and gate status are part of the
+    output so the numbers are reproducible: END_DATE is
+    datetime.today(), so a rerun on another day covers another window.
+    """
     print("\n" + "=" * 65)
     print("  SECOND LAYER CAPITAL — NUCLEAR BACKTEST MATRIX")
+    print(f"  Run window: {run_info['start_date']} → {run_info['end_date']} "
+          f"(data: {run_info['data_start']} → {run_info['data_end']})")
     print("  Risk controls: 15% stop-loss | 100% take-profit | 0.05% slippage")
-    if null_count:
-        print(f"  NQS note: {null_count}/{len(TICKERS)} tickers have null NQS "
-              f"(passing on price signals — populate manual_overrides.json to activate gate)")
+    print(f"  NQS gate: {run_info['nqs_gate']}")
     print("=" * 65)
     print(f"  {'Strategy':<28} {'Return':>9} {'Ann.Vol':>9} {'Sharpe':>8} {'MaxDD':>9}")
     print("  " + "-" * 63)
@@ -323,43 +431,110 @@ def print_report(metrics_list, nqs_scores):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def _run_one_variant(equity_prices, defensive_prices, window, label, nqs_scores,
+                     all_metrics, equity_curves):
+    print(f"\n[BACKTEST] Running {label}...")
+    returns, curve, trade_log = run_backtest(
+        equity_prices, defensive_prices, window, nqs_scores)
+    metrics = calc_metrics(returns, label)
+    all_metrics.append(metrics)
+    equity_curves[label] = curve
+    tp_events = [e for e in trade_log if e["event"] == "take_profit"]
+    def_events = [e for e in trade_log if e["event"] == "defensive_rotation"]
+    print(f"[BACKTEST] {label}: {metrics['total_return']}% total | "
+          f"{metrics['ann_vol']}% vol | Sharpe {metrics['sharpe']} | "
+          f"MaxDD {metrics['max_drawdown']}% | "
+          f"{len(tp_events)} take-profits | {len(def_events)} defensive rotations")
+
+
 def main():
     equity_prices, defensive_prices = load_prices()
+    data_start = equity_prices.index[0].date()
+    data_end = equity_prices.index[-1].date()
 
+    # NQS is needed only for the gated (in-sample) variants. A total
+    # load failure must not silently turn the gate off: banner loudly,
+    # skip the gated variants, record it in the report, exit non-zero
+    # after the honest (ungated + benchmark) numbers are printed.
+    nqs_scores = None
+    nqs_failed = False
+    nqs_fail_reason = ""
     print("[NQS] Loading Nuclear Quality Scores...")
-    nqs_scores = load_nqs_scores()
-    scored = {t: v for t, v in nqs_scores.items() if v is not None}
-    if scored:
+    try:
+        nqs_scores = load_nqs_scores()
+    except RuntimeError as e:
+        nqs_failed = True
+        nqs_fail_reason = str(e)
+        print("!" * 65)
+        print(f"!!! NQS GATE OFF: {e}")
+        print("!!! Gated variants skipped — ungated momentum and benchmarks still run.")
+        print("!" * 65)
+    if nqs_scores is not None:
+        scored = {t: v for t, v in nqs_scores.items() if v is not None}
         print("[NQS] Scored tickers: " + ", ".join(f"{t}={v}" for t, v in scored.items()))
+        null_count = len(TICKERS) - len(scored)
+        nqs_gate = (f"ACTIVE ({len(scored)}/{len(TICKERS)} scored, "
+                    f"threshold {NQS_MIN_THRESHOLD})")
+        if null_count:
+            nqs_gate += (f" — {null_count} null, passing on price signals")
     else:
-        print("[NQS] No NQS scores available — all tickers pass on price signals (null bypass active)")
+        nqs_gate = f"OFF — load failed ({nqs_fail_reason}); gated variants skipped"
 
-    all_metrics   = []
+    all_metrics = []
     equity_curves = {}
 
     for window in MOMENTUM_WINDOWS:
-        label = f"{window}-Day Momentum"
-        print(f"\n[BACKTEST] Running {label}...")
-        returns, curve, trade_log = run_backtest(equity_prices, defensive_prices, window, nqs_scores)
-        metrics = calc_metrics(returns, label)
-        all_metrics.append(metrics)
-        equity_curves[label] = curve
-        tp_events  = [e for e in trade_log if e["event"] == "take_profit"]
-        def_events = [e for e in trade_log if e["event"] == "defensive_rotation"]
-        print(f"[BACKTEST] {label}: {metrics['total_return']}% total | "
-              f"{metrics['ann_vol']}% vol | Sharpe {metrics['sharpe']} | "
-              f"MaxDD {metrics['max_drawdown']}% | "
-              f"{len(tp_events)} take-profits | {len(def_events)} defensive rotations")
+        # Ungated momentum: the honest variant (no lookahead gate).
+        _run_one_variant(equity_prices, defensive_prices, window,
+                         strategy_label(window, gated=False), None,
+                         all_metrics, equity_curves)
+        # Gated momentum: today's NQS applied to the whole history —
+        # in-sample, labeled as such.
+        if nqs_scores is not None:
+            _run_one_variant(equity_prices, defensive_prices, window,
+                             strategy_label(window, gated=True), nqs_scores,
+                             all_metrics, equity_curves)
 
-    print("\n[BACKTEST] Building benchmark...")
-    bench_returns, bench_curve = build_benchmark(equity_prices, max(MOMENTUM_WINDOWS))
-    bench_metrics = calc_metrics(bench_returns, "Benchmark (Buy & Hold)")
-    all_metrics.append(bench_metrics)
-    equity_curves["Benchmark (Buy & Hold)"] = bench_curve
+        # Benchmarks over the SAME trading days as this window's
+        # strategies, so the comparison covers identical days.
+        print(f"\n[BACKTEST] Building benchmarks for {window}-day window...")
+        bh_returns, bh_curve = build_benchmark_buy_and_hold(equity_prices, window)
+        bh_label = f"Benchmark (Buy & Hold) — {window}D"
+        bh_metrics = calc_metrics(bh_returns, bh_label)
+        all_metrics.append(bh_metrics)
+        equity_curves[bh_label] = bh_curve
+        print(f"[BACKTEST] {bh_label}: {bh_metrics['total_return']}% total | "
+              f"Sharpe {bh_metrics['sharpe']} | MaxDD {bh_metrics['max_drawdown']}%")
 
-    print_report(all_metrics, nqs_scores)
-    plot_equity_curves(equity_curves, CHART_PATH)
+        ew_returns, ew_curve = build_benchmark_equal_weight(equity_prices, window)
+        ew_label = f"Equal-Weight (daily rebalanced) — {window}D"
+        ew_metrics = calc_metrics(ew_returns, ew_label)
+        all_metrics.append(ew_metrics)
+        equity_curves[ew_label] = ew_curve
+        print(f"[BACKTEST] {ew_label}: {ew_metrics['total_return']}% total | "
+              f"Sharpe {ew_metrics['sharpe']} | MaxDD {ew_metrics['max_drawdown']}%")
+
+    run_info = {"start_date": START_DATE, "end_date": END_DATE,
+                "data_start": str(data_start), "data_end": str(data_end),
+                "nqs_gate": nqs_gate}
+    print_report(all_metrics, run_info)
+
+    # Chart: the three honest momentum curves plus the 60-day window's
+    # benchmarks (the live strategy's window). The full matrix is in
+    # the printed report; twelve curves on one chart is unreadable.
+    chart_curves = {}
+    for window in MOMENTUM_WINDOWS:
+        label = strategy_label(window, gated=False)
+        chart_curves[label] = equity_curves[label]
+    chart_curves[f"Benchmark (Buy & Hold) — 60D"] = equity_curves[
+        "Benchmark (Buy & Hold) — 60D"]
+    chart_curves[f"Equal-Weight (daily rebalanced) — 60D"] = equity_curves[
+        "Equal-Weight (daily rebalanced) — 60D"]
+    plot_equity_curves(chart_curves, CHART_PATH,
+                       title_suffix=f"{START_DATE} → {END_DATE}")
+
+    return 2 if nqs_failed else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
