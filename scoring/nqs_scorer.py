@@ -23,9 +23,18 @@ Domain-Aware Threshold Architecture:
 
 Design: missing data = bucket EXCLUDED from average, not scored zero.
         Pre-revenue SMRs are evaluated solely on cash runway survival timeline.
+        A negative EBITDA is not missing data -- it is known-bad data, so an
+        established name with negative EBITDA scores 0 on the runway bucket
+        instead of being excluded (excluding it would raise the scores of
+        money-losing names).
+
+Run from the repo root (`python main.py`) or as a module
+(`python -m scoring.nqs_scorer`). Running the file directly fails on the
+absolute imports below -- that is standard Python layout, not a bug.
 """
 
 import json
+import math
 import os
 
 from config.universe import (
@@ -35,6 +44,16 @@ from config.universe import (
 from data.fetch_fundamentals import fetch_balance_sheet_runway, fetch_margin_expansion
 
 OVERRIDES_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "manual_overrides.json")
+
+
+def _present(value) -> bool:
+    """True when a fetched value is usable: not None and not NaN.
+
+    NaN is not None, so a bare `is not None` check lets it through and it
+    then scores 0 down the line (every NaN comparison is False). Treat it
+    as missing, exactly like None.
+    """
+    return value is not None and not (isinstance(value, float) and math.isnan(value))
 
 # -- Domain-Aware Threshold Tables ---------------------------------------------
 DOMAIN_THRESHOLDS = {
@@ -92,33 +111,53 @@ def score_balance_sheet_runway(ticker: str, domain: str) -> dict:
     thresholds = _get_domain_thresholds(domain)
 
     if is_pre_revenue:
-        if value is not None:
+        if _present(value):
             if value >= 12:   score = 10
             elif value >= 8:  score = 7
             elif value >= 4:  score = 4
             else:             score = 1
-        else:
-            score = 0
+        # No usable runway value: score stays None, the bucket is excluded.
+        # (Previously this scored 0 -- the one place the module's
+        # missing-data rule was violated. A pre-revenue name with positive
+        # operating cash flow also lands here: no burn, no runway to
+        # measure, so there is nothing to score.)
         return {"bucket": "balance_sheet_runway", "score": score, "detail": result}
 
-    if value is not None and result["metric_type"] == "net_debt_to_ebitda":
-        cap = thresholds.get("net_debt_ebitda_cap")
-        if cap is not None:
-            if value <= 0:              score = 10
-            elif value <= cap * 0.25:   score = 8
-            elif value <= cap * 0.50:   score = 6
-            elif value <= cap * 0.75:   score = 4
-            elif value <= cap:          score = 2
-            else:                       score = 0
+    if _present(value) and result["metric_type"] == "net_debt_to_ebitda":
+        # Negative EBITDA makes the ratio meaningless as leverage: the
+        # value is negative, and the `value <= 0 -> 10` branch below was
+        # written to reward net cash, not losses. Known-bad data scores 0
+        # (it is not missing, so the bucket is not excluded -- excluding
+        # it would raise the scores of money-losing names). Zero EBITDA
+        # never reaches here: the fetcher already returns value None.
+        raw = result.get("raw") or {}
+        ebitda = raw.get("ebitda")
+        if ebitda is not None and ebitda < 0:
+            score = 0
         else:
-            if value <= 0:    score = 10
-            elif value <= 1:  score = 8
-            elif value <= 2:  score = 6
-            elif value <= 3:  score = 4
-            elif value <= 4:  score = 2
-            else:             score = 0
+            cap = thresholds.get("net_debt_ebitda_cap")
+            score = _score_runway_value(value, cap)
+        return {"bucket": "balance_sheet_runway", "score": score, "detail": result}
 
     return {"bucket": "balance_sheet_runway", "score": score, "detail": result}
+
+
+def _score_runway_value(value: float, cap) -> int:
+    """Net Debt/EBITDA ladder. `value <= 0` means net cash: best score."""
+    if cap is not None:
+        if value <= 0:              return 10
+        elif value <= cap * 0.25:   return 8
+        elif value <= cap * 0.50:   return 6
+        elif value <= cap * 0.75:   return 4
+        elif value <= cap:          return 2
+        else:                       return 0
+    else:
+        if value <= 0:    return 10
+        elif value <= 1:  return 8
+        elif value <= 2:  return 6
+        elif value <= 3:  return 4
+        elif value <= 4:  return 2
+        else:             return 0
 
 
 def score_margin_expansion(ticker: str, domain: str) -> dict:
@@ -133,9 +172,13 @@ def score_margin_expansion(ticker: str, domain: str) -> dict:
     gm_floor   = thresholds.get("gross_margin_floor")
 
     trend = result.get("gross_margin_trend")
-    if trend is not None:
-        gm_current = result.get("gross_margin_current") or 0
-        if gm_floor is not None:
+    if _present(trend):
+        gm_current = result.get("gross_margin_current")
+        if gm_floor is not None and not _present(gm_current):
+            # Floor cannot be judged without a current margin: skip the
+            # trend sub-score instead of scoring 0 against the floor.
+            pass
+        elif gm_floor is not None:
             if gm_current >= gm_floor and trend > 0.02:      sub_scores.append(5)
             elif gm_current >= gm_floor and trend >= 0:       sub_scores.append(3)
             elif gm_current >= gm_floor and trend >= -0.02:   sub_scores.append(1)
@@ -147,7 +190,7 @@ def score_margin_expansion(ticker: str, domain: str) -> dict:
             else:                 sub_scores.append(0)
 
     roic = result.get("roic")
-    if roic is not None:
+    if _present(roic):
         if roic > roic_tiers["high"]:   sub_scores.append(5)
         elif roic > roic_tiers["mid"]:  sub_scores.append(3)
         elif roic > roic_tiers["low"]:  sub_scores.append(1)
@@ -163,17 +206,17 @@ def score_backlog_momentum(ticker: str, overrides: dict) -> dict:
                 "detail": "not applicable to this domain"}
 
     entry = overrides.get(ticker, {})
-    if entry.get("backlog_score_0_10") is not None:
+    if _present(entry.get("backlog_score_0_10")):
         return {"bucket": "backlog_momentum", "score": entry["backlog_score_0_10"],
                 "detail": entry}
 
     sub_scores = []
     btb = entry.get("book_to_bill")
-    if btb is not None:
+    if _present(btb):
         sub_scores.append(5 if btb > 1.2 else 3 if btb >= 1.0 else 0)
 
     growth = entry.get("backlog_growth_yoy")
-    if growth is not None:
+    if _present(growth):
         sub_scores.append(5 if growth > 0.20 else 3 if growth >= 0 else 0)
 
     score = sum(sub_scores) if sub_scores else None
@@ -195,12 +238,26 @@ def calculate_nqs(ticker: str, overrides: dict = None) -> dict:
     nqs = round(sum(b["score"] for b in applicable) / len(applicable) * 10, 1) \
           if applicable else None
 
+    # Buckets that could apply to this domain: backlog only for the
+    # backlog-relevant names, runway always, margin everywhere except
+    # smr_pureplay. `bucket_count` / `buckets_possible` is the coverage:
+    # a 100.0 on 1/1 bucket is not the same evidence as a 100.0 on 3/3,
+    # and downstream consumers (allocator, live signal) print it next to
+    # the score so the two can no longer be mistaken for each other.
+    buckets_possible = (
+        (1 if ticker in BACKLOG_RELEVANT_TICKERS else 0)
+        + 1
+        + (0 if domain == "smr_pureplay" else 1)
+    )
+
     return {
-        "ticker":          ticker,
-        "domain":          domain,
-        "nqs":             nqs,
-        "buckets_applied": [b["bucket"] for b in applicable],
-        "bucket_detail":   buckets,
+        "ticker":           ticker,
+        "domain":           domain,
+        "nqs":              nqs,
+        "buckets_applied":  [b["bucket"] for b in applicable],
+        "bucket_count":     len(applicable),
+        "buckets_possible": buckets_possible,
+        "bucket_detail":    buckets,
     }
 
 
@@ -211,3 +268,20 @@ def run_full_universe() -> list:
         for ticker in domain["tickers"]:
             results.append(calculate_nqs(ticker, overrides))
     return sorted(results, key=lambda r: (r["nqs"] is None, -(r["nqs"] or 0)))
+
+
+def print_results_table(results: list) -> None:
+    """Shared NQS table printer (also used by main.py)."""
+    print(f"\n{'TICKER':<8}{'DOMAIN':<28}{'NQS':<8}{'BKTS':<6}{'BUCKETS APPLIED'}")
+    print("-" * 80)
+    for r in results:
+        nqs_display = r["nqs"] if r["nqs"] is not None else "N/A"
+        domain = r["domain"] if r["domain"] is not None else "unknown"
+        buckets = ", ".join(r["buckets_applied"]) if r["buckets_applied"] else "none"
+        coverage = f"{r['bucket_count']}/{r['buckets_possible']}"
+        print(f"{r['ticker']:<8}{domain:<28}{str(nqs_display):<8}{coverage:<6}{buckets}")
+    print()
+
+
+if __name__ == "__main__":
+    print_results_table(run_full_universe())
