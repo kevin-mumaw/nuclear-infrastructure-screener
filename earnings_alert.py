@@ -56,6 +56,63 @@ def load_overrides() -> dict:
         return json.load(f)
 
 
+def parse_calendar_earnings_date(cal, today):
+    """Parse the next earnings date out of a yfinance calendar payload.
+
+    Returns the earliest date >= today, or None when the payload has no
+    usable future earnings date. Never raises on a malformed payload:
+    an unreadable calendar is a "no date" outcome, not a crash.
+
+    Shapes handled (yfinance changed shape between versions):
+    - dict (yfinance >= 1.x): {"Earnings Date": [date, ...]} — the value
+      is a list, sometimes a range of two dates; element [0] is the date
+      Yahoo knows. A scalar is accepted defensively.
+    - DataFrame (yfinance <= 0.2.x): an "Earnings Date" row, values
+      parsed as timestamps. Duck-typed so this module does not need
+      to know which shape it got.
+    """
+    if cal is None:
+        return None
+
+    if isinstance(cal, dict):
+        values = cal.get("Earnings Date")
+        if values is None:
+            return None
+        if not isinstance(values, (list, tuple)):
+            values = [values]
+        dates = []
+        for val in values:
+            try:
+                d = pd.Timestamp(val).date()
+                if d >= today:
+                    dates.append(d)
+            except Exception:
+                continue
+        return min(dates) if dates else None
+
+    # DataFrame shape — duck-typed.
+    if hasattr(cal, "empty") and hasattr(cal, "loc"):
+        if cal.empty:
+            return None
+        if "Earnings Date" in cal.index:
+            raw = cal.loc["Earnings Date"]
+            # .values may be 2-D if the index repeats; flatten so each
+            # entry is a single value.
+            values = raw.values.flatten() if hasattr(raw, "values") else [raw]
+            dates = []
+            for val in values:
+                try:
+                    d = pd.Timestamp(val).date()
+                    if d >= today:
+                        dates.append(d)
+                except Exception:
+                    continue
+            return min(dates) if dates else None
+        return None
+
+    return None
+
+
 def get_earnings_date(ticker: str):
     try:
         t     = yf.Ticker(ticker)
@@ -79,22 +136,13 @@ def get_earnings_date(ticker: str):
         except Exception:
             pass
 
-        # Attempt 3: calendar attribute
+        # Attempt 3: calendar attribute — dict in yfinance >= 1.x,
+        # DataFrame in older versions. parse_calendar_earnings_date
+        # handles both shapes and never raises on a bad payload.
         try:
-            cal = t.calendar
-            if cal is not None and not cal.empty:
-                if "Earnings Date" in cal.index:
-                    raw = cal.loc["Earnings Date"]
-                    dates = []
-                    for val in raw.values:
-                        try:
-                            d = pd.Timestamp(val).date()
-                            if d >= today:
-                                dates.append(d)
-                        except Exception:
-                            pass
-                    if dates:
-                        return datetime.combine(min(dates), datetime.min.time())
+            d = parse_calendar_earnings_date(t.calendar, today)
+            if d is not None:
+                return datetime.combine(d, datetime.min.time())
         except Exception:
             pass
 
